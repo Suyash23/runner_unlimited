@@ -1,8 +1,7 @@
-
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:vector_math/vector_math_64.dart' as vm;
+import 'dart:math';
 
 void main() => runApp(const MyApp());
 
@@ -32,36 +31,69 @@ class TubeGame extends StatefulWidget {
 class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin {
   late final Ticker _ticker;
 
-  // Game State
-  double _distance = 0;
-  bool _isGameOver = false;
-  final vm.Vector3 _playerPos = vm.Vector3(0, -270.0, 0);
-  double _fallVel = 0;
-  bool _hasGround = true;
-
-  // Camera & Controls State
-  double _tubeRotationZ = 0;
-  double _pitch = -0.15;
-  double _yaw = 0;
-
-  double _rollVel = 0;
-  double _pitchVel = 0;
-  double _yawVel = 0;
-
-  // Tube Geometry
+  // DESIGN & GEOMETRY CONSTANTS
+  static const int _ringsCount = 30;
+  static const int _ringSegments = 16;
   static const double _radius = 300;
-  static const double _ringSpacing = 250;
-  static const int _ringsCount = 60;
-  static const int _ringSegments = 32;
-  static const double _farPlane = -_ringsCount * _ringSpacing;
+  static const double _ringSpacing = 350;
+  static const double _farPlane = -(_ringsCount * _ringSpacing);
+  static const _tubeColor = Color(0xFF00FF00);
+  static const _playerColor = Color(0xFFFFFFFF);
 
+  // GAME STATE
+  double _distance = 0;
+  double _tubeRotationZ = 0;
+  double _rollVel = 0;
+  double _pitch = 0.05 * pi;
+  double _pitchVel = 0;
+  double _yaw = 0;
+  double _yawVel = 0;
+  bool _isGameOver = false;
+  bool _hasGround = true;
+  double _fallVel = 0;
+  double _playerY = -_radius + 40;
+
+  // GEOMETRY
   List<List<vm.Vector3>> _rings = [];
+  List<vm.Vector3> _playerSphere = [];
 
   @override
   void initState() {
     super.initState();
-    _generateTubeRings();
+    _resetGame();
     _ticker = createTicker(_onTick)..start();
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  void _resetGame() {
+    setState(() {
+      _distance = 0;
+      _tubeRotationZ = 0;
+      _rollVel = 0;
+      _pitch = 0.05 * pi;
+      _pitchVel = 0;
+      _yaw = 0;
+      _yawVel = 0;
+      _isGameOver = false;
+      _fallVel = 0;
+      _playerY = -_radius + 40;
+      _generateTubeRings();
+      _generatePlayerSphere();
+    });
+  }
+
+  bool _checkGround(double rotation) {
+    final cycle = _distance % 3000;
+    if (cycle > 2000) {
+        final normRot = ((rotation % (pi * 2)) + (pi * 2)) % (pi * 2);
+        if (normRot > 1.5 && normRot < 4.5) return false;
+    }
+    return true;
   }
 
   void _generateTubeRings() {
@@ -79,57 +111,59 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
     }
   }
 
-  @override
-  void dispose() {
-    _ticker.dispose();
-    super.dispose();
+  void _generatePlayerSphere() {
+      const double radius = 40.0;
+      const int latitudeBands = 10;
+      const int longitudeBands = 10;
+
+      _playerSphere = [];
+
+      for (int lat = 0; lat <= latitudeBands; lat++) {
+          final double theta = lat * pi / latitudeBands;
+          final double sinTheta = sin(theta);
+          final double cosTheta = cos(theta);
+
+          for (int long = 0; long <= longitudeBands; long++) {
+              final double phi = long * 2 * pi / longitudeBands;
+              final double sinPhi = sin(phi);
+              final double cosPhi = cos(phi);
+
+              final double x = cosPhi * sinTheta;
+              final double y = cosTheta;
+              final double z = sinPhi * sinTheta;
+
+              _playerSphere.add(vm.Vector3(x, y, z) * radius);
+          }
+      }
   }
 
   void _onTick(Duration elapsed) {
     if (_isGameOver) return;
-
     setState(() {
-      // Update camera and tube rotation based on velocities
+      _distance += 25;
       _tubeRotationZ += _rollVel;
-      _pitch = (_pitch + _pitchVel).clamp(-0.4, 0.4);
+      _pitch = (_pitch + _pitchVel).clamp(0, pi * 0.2);
       _yaw += _yawVel;
 
-      // Move the rings
-      for (final ring in _rings) {
-        for (final point in ring) {
-          point.z += 25; // Speed
+      for (var ring in _rings) {
+        for (var point in ring) {
+          point.z += 25;
+          if (point.z > 100) {
+            point.z = _farPlane;
+          }
         }
       }
-
-      // Recycle rings
-      _rings.where((ring) => ring.first.z > 100).forEach((ring) {
-        for (final point in ring) {
-          point.z = _farPlane;
-        }
-      });
-
-      _distance += 25;
 
       _hasGround = _checkGround(_tubeRotationZ);
-
       if (!_hasGround) {
         _fallVel -= 1.5;
-        _playerPos.y += _fallVel;
+        _playerY += _fallVel;
       }
 
-      if (_playerPos.y < -2000) {
+      if (_playerY < -1000) {
         _isGameOver = true;
       }
     });
-  }
-
-  bool _checkGround(double rotation) {
-    final cycle = _distance % 3000;
-    if (cycle > 2000) {
-      final normRot = ((rotation % (pi * 2)) + (pi * 2)) % (pi * 2);
-      if (normRot > 1.5 && normRot < 4.5) return false;
-    }
-    return true;
   }
 
   @override
@@ -142,110 +176,47 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
             size: Size.infinite,
             painter: TubePainter(
               rings: _rings,
+              tubeRotationZ: _tubeRotationZ,
               pitch: _pitch,
               yaw: _yaw,
-              tubeRotationZ: _tubeRotationZ,
-              playerPos: _playerPos,
+              distance: _distance,
+              playerSphere: _playerSphere,
+              playerY: _playerY,
             ),
           ),
-          // The HUD will go here
           _buildHud(),
-          // The Game Over screen will go here
-          // CONTROLS
-          Positioned(
-            bottom: 30,
-            left: 20,
-            right: 20,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // YAW (Q/E)
-                Row(children: [
-                   _buildControlButton('Q', () => _yawVel = 0.015, () => _yawVel = 0),
-                   const SizedBox(width: 10),
-                  _buildControlButton('E', () => _yawVel = -0.015, () => _yawVel = 0),
-                ]),
-                // PITCH (W/S) & ROLL (A/D)
-                Row(children: [
-                  _buildControlButton('A', () => _rollVel = 0.05, () => _rollVel = 0),
-                  const SizedBox(width: 10),
-                  Column(children: [
-                    _buildControlButton('W', () => _pitchVel = 0.01, () => _pitchVel = 0),
-                    const SizedBox(height: 10),
-                    _buildControlButton('S', () => _pitchVel = -0.01, () => _pitchVel = 0),
-                  ]),
-                  const SizedBox(width: 10),
-                  _buildControlButton('D', () => _rollVel = -0.05, () => _rollVel = 0),
-                ],)
-              ],
-            ),
-          ),
+          if (!_isGameOver) _buildControls(),
           if (_isGameOver) _buildGameOver(),
         ],
       ),
     );
   }
 
-  Widget _buildGameOver() {
-    return Container(
-      color: Colors.black.withOpacity(0.9),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              'CRITICAL FAILURE',
-              style: TextStyle(fontSize: 32, color: Colors.red, letterSpacing: 5),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'DISTANCE: ${(_distance / 10).floor()}m',
-              style: const TextStyle(fontSize: 20, color: Colors.white),
-            ),
-            const SizedBox(height: 40),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.greenAccent,
-                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-              ),
-              onPressed: _resetGame,
-              child: const Text(
-                'REBOOT SYSTEM',
-                style: TextStyle(fontSize: 18, color: Colors.black),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _resetGame() {
-    setState(() {
-      _isGameOver = false;
-      _distance = 0;
-      _playerPos.setValues(0, -270.0, 0);
-      _fallVel = 0;
-      _tubeRotationZ = 0;
-      _pitch = -0.15;
-      _yaw = 0;
-      _rollVel = 0;
-      _pitchVel = 0;
-      _yawVel = 0;
-      _generateTubeRings();
-    });
-  }
-
-  Widget _buildHud() {
+  Widget _buildControls() {
     return Positioned(
-      top: 40,
+      bottom: 30,
+      left: 20,
       right: 20,
-      child: DefaultTextStyle(
-        style: const TextStyle(color: Colors.greenAccent, fontSize: 16),
-        child: Text(
-          'DISTANCE: ${(_distance / 10).floor()}m\nSTATUS: ${_hasGround ? "STABLE" : "VOID DETECTED"}',
-          textAlign: TextAlign.right,
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(children: [
+            _buildControlButton('YAW L', () => _yawVel = 0.02, () => _yawVel = 0),
+            const SizedBox(width: 10),
+            _buildControlButton('YAW R', () => _yawVel = -0.02, () => _yawVel = 0),
+          ]),
+          Row(children: [
+            _buildControlButton('ROLL L', () => _rollVel = 0.05, () => _rollVel = 0),
+            const SizedBox(width: 10),
+            Column(children: [
+              _buildControlButton('PITCH UP', () => _pitchVel = 0.01, () => _pitchVel = 0),
+              const SizedBox(height: 10),
+              _buildControlButton('PITCH DOWN', () => _pitchVel = -0.01, () => _pitchVel = 0),
+            ]),
+            const SizedBox(width: 10),
+            _buildControlButton('ROLL R', () => _rollVel = -0.05, () => _rollVel = 0),
+          ],)
+        ],
       ),
     );
   }
@@ -258,11 +229,50 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.greenAccent.withOpacity(0.2),
-          border: Border.all(color: Colors.greenAccent),
+          color: _tubeColor.withOpacity(0.2),
+          border: Border.all(color: _tubeColor),
           borderRadius: BorderRadius.circular(4),
         ),
-        child: Text(label, style: const TextStyle(color: Colors.greenAccent, fontSize: 18)),
+        child: Text(label, style: const TextStyle(color: _tubeColor, fontSize: 18)),
+      ),
+    );
+  }
+
+  Widget _buildHud() {
+    return Positioned(
+      top: 40,
+      right: 20,
+      child: DefaultTextStyle(
+        style: const TextStyle(color: _tubeColor, fontSize: 16),
+        child: Text(
+          'DISTANCE: ${(_distance / 10).floor()}m\nSTATUS: ${_hasGround ? "STABLE" : "VOID DETECTED"}',
+          textAlign: TextAlign.right,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGameOver() {
+    return Container(
+      color: Colors.black.withOpacity(0.9),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('CRITICAL FAILURE', style: TextStyle(fontSize: 32, color: Colors.red, letterSpacing: 5)),
+            const SizedBox(height: 20),
+            Text('DISTANCE: ${(_distance / 10).floor()}m', style: const TextStyle(fontSize: 20, color: Colors.white)),
+            const SizedBox(height: 40),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _tubeColor,
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+              ),
+              onPressed: _resetGame,
+              child: const Text('REBOOT SYSTEM', style: TextStyle(fontSize: 18, color: Colors.black)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -270,27 +280,36 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
 
 class TubePainter extends CustomPainter {
   final List<List<vm.Vector3>> rings;
+  final double tubeRotationZ;
   final double pitch;
   final double yaw;
-  final double tubeRotationZ;
-  final vm.Vector3 playerPos;
+  final double distance;
+  final List<vm.Vector3> playerSphere;
+  final double playerY;
 
   TubePainter({
     required this.rings,
+    required this.tubeRotationZ,
     required this.pitch,
     required this.yaw,
-    required this.tubeRotationZ,
-    required this.playerPos,
+    required this.distance,
+    required this.playerSphere,
+    required this.playerY,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.greenAccent
+    final tubePaint = Paint()
+      ..color = _TubeGameState._tubeColor
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
 
-    final double fov = 60 * (pi / 180);
+    final playerPaint = Paint()
+      ..color = _TubeGameState._playerColor
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+
+    final double fov = 75 * (pi / 180);
     final double near = 1;
     final double far = 20000;
     final double aspectRatio = size.width / size.height;
@@ -298,82 +317,103 @@ class TubePainter extends CustomPainter {
     final projectionMatrix = vm.makePerspectiveMatrix(fov, aspectRatio, near, far);
 
     final viewMatrix = vm.Matrix4.identity()
-      ..rotateX(-pitch)
-      ..rotateY(-yaw);
+      ..translate(0.0, -_TubeGameState._radius + 150, -300.0)
+      ..rotateX(pitch)
+      ..rotateY(yaw);
 
     final tubeRotationMatrix = vm.Matrix4.identity()..rotateZ(tubeRotationZ);
 
+    final List<List<Offset?>> projectedRings = [];
+    final List<List<double>> ringDepths = [];
+
     for (final ring in rings) {
-      final List<Offset?> projectedPoints = [];
-
-      for (int i = 0; i < ring.length; i++) {
-        vm.Vector4 p = vm.Vector4(ring[i].x, ring[i].y, ring[i].z, 1.0);
-
+      final List<Offset?> projectedRing = [];
+      final List<double> depths = [];
+      for (final point in ring) {
+        vm.Vector4 p = vm.Vector4(point.x, point.y, point.z, 1.0);
         p = tubeRotationMatrix * p;
         p = viewMatrix * p;
 
-        final double zDepth = p.z;
+        depths.add(p.z.abs());
 
         p = projectionMatrix * p;
 
         if (p.w > 0) {
           p.x /= p.w;
           p.y /= p.w;
-
-          // Don't draw points behind the camera or too far
-          if (zDepth > -near || zDepth < -10000) {
-             projectedPoints.add(null);
-             continue;
-          }
-
-          final screenX = (p.x + 1) * 0.5 * size.width;
-          final screenY = (1 - (p.y + 1) * 0.5) * size.height;
-
-          // Fog Calculation
-          final double fogFactor = (zDepth.abs() - 2000) / (15000 - 2000);
-          final double opacity = 1.0 - fogFactor.clamp(0.0, 1.0);
-
-          if (opacity > 0) {
-             paint.color = Colors.greenAccent.withOpacity(opacity);
-             projectedPoints.add(Offset(screenX, screenY));
-          } else {
-             projectedPoints.add(null);
-          }
+          projectedRing.add(Offset(
+            (p.x + 1) * 0.5 * size.width,
+            (1 - (p.y + 1) * 0.5) * size.height,
+          ));
         } else {
-          projectedPoints.add(null);
+          projectedRing.add(null);
         }
       }
+      projectedRings.add(projectedRing);
+      ringDepths.add(depths);
+    }
 
-      for (int i = 0; i < projectedPoints.length; i++) {
-        final p1 = projectedPoints[i];
-        final p2 = projectedPoints[(i + 1) % projectedPoints.length];
-        if (p1 != null && p2 != null) {
-          canvas.drawLine(p1, p2, paint);
+    for (int i = 0; i < rings.length - 1; i++) {
+      final double adjustedDistance = distance + rings[i].first.z.abs();
+      final bool isHoleZone = (adjustedDistance % 3000) > 2000;
+
+      for (int j = 0; j < _TubeGameState._ringSegments; j++) {
+        final double angle = j * (2 * pi / _TubeGameState._ringSegments);
+        final double normalizedAngle = ((angle - tubeRotationZ) % (2 * pi) + (2 * pi)) % (2 * pi);
+
+        if (isHoleZone && normalizedAngle > 1.5 && normalizedAngle < 4.5) {
+          continue; // Skip drawing this segment
         }
+
+        final double fogFactor = (ringDepths[i][j] - 2000) / (15000 - 2000);
+        final double opacity = 1.0 - fogFactor.clamp(0.0, 1.0);
+        if (opacity <= 0) continue;
+
+        final paint = tubePaint..color = _TubeGameState._tubeColor.withOpacity(opacity);
+
+        final p1 = projectedRings[i][j];
+        final p2 = projectedRings[i + 1][j];
+        if (p1 != null && p2 != null) canvas.drawLine(p1, p2, paint);
+
+        final p3 = projectedRings[i][j];
+        final p4 = projectedRings[i][(j + 1) % _TubeGameState._ringSegments];
+        if (p3 != null && p4 != null) canvas.drawLine(p3, p4, paint);
       }
     }
 
-    // Draw Player
-    vm.Vector4 playerP = vm.Vector4(playerPos.x, playerPos.y, playerPos.z, 1.0);
-    playerP = viewMatrix * playerP;
+    final List<Offset?> projectedSphere = [];
+    for (final point in playerSphere) {
+      vm.Vector4 p = vm.Vector4(point.x, point.y + playerY, point.z, 1.0);
+      p = viewMatrix * p;
+      p = projectionMatrix * p;
 
-    final double playerDepth = playerP.z.abs();
-
-    playerP = projectionMatrix * playerP;
-
-    if (playerP.w > 0) {
-      playerP.x /= playerP.w;
-      playerP.y /= playerP.w;
-      final screenX = (playerP.x + 1) * 0.5 * size.width;
-      final screenY = (1 - (playerP.y + 1) * 0.5) * size.height;
-
-      final double perspectiveScale = 1 - (playerDepth / 15000).clamp(0.0, 1.0);
-      final double playerSize = 30 * perspectiveScale;
-
-      final playerPaint = Paint()..color = Colors.greenAccent;
-      if (playerSize > 1) {
-        canvas.drawCircle(Offset(screenX, screenY), playerSize, playerPaint);
+      if (p.w > 0) {
+        p.x /= p.w;
+        p.y /= p.w;
+        projectedSphere.add(Offset(
+          (p.x + 1) * 0.5 * size.width,
+          (1 - (p.y + 1) * 0.5) * size.height,
+        ));
+      } else {
+        projectedSphere.add(null);
       }
+    }
+
+    const int latitudeBands = 10;
+    const int longitudeBands = 10;
+    for (int lat = 0; lat < latitudeBands; lat++) {
+        for (int long = 0; long < longitudeBands; long++) {
+            final int first = (lat * (longitudeBands + 1)) + long;
+            final int second = first + longitudeBands + 1;
+
+            final p1 = projectedSphere[first];
+            final p2 = projectedSphere[first + 1];
+            if (p1 != null && p2 != null) canvas.drawLine(p1, p2, playerPaint);
+
+            final p3 = projectedSphere[first];
+            final p4 = projectedSphere[second];
+            if (p3 != null && p4 != null) canvas.drawLine(p3, p4, playerPaint);
+        }
     }
   }
 
