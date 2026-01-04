@@ -1,6 +1,7 @@
 
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:vector_math/vector_math_64.dart' as vm;
 
 void main() => runApp(const MyApp());
