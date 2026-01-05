@@ -32,29 +32,33 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
   late final Ticker _ticker;
 
   // DESIGN & GEOMETRY CONSTANTS
-  static const int _ringsCount = 30;
   static const int _ringSegments = 16;
-  static const double _radius = 300;
   static const double _ringSpacing = 350;
-  static const double _farPlane = -(_ringsCount * _ringSpacing);
-  static const _tubeColor = Color(0xFF00FF00);
-  static const _playerColor = Color(0xFFFFFFFF);
+  final _random = Random();
+  late double _outerRadius;
+  late double _innerRadius;
+  late int _tubeLength;
+  late double _farPlane;
+  static final _tubeColor = Colors.grey[700]!;
+  static const _playerColor = Colors.greenAccent;
 
   // GAME STATE
   double _distance = 0;
   double _tubeRotationZ = 0;
   double _rollVel = 0;
-  double _pitch = 0.05 * pi;
+  late double _pitch;
   double _pitchVel = 0;
   double _yaw = 0;
   double _yawVel = 0;
   bool _isGameOver = false;
   bool _hasGround = true;
   double _fallVel = 0;
-  double _playerY = -_radius + 40;
+  late double _playerY;
+  double _playerZ = 0;
 
   // GEOMETRY
-  List<List<vm.Vector3>> _rings = [];
+  List<List<vm.Vector3>> _outerRings = [];
+  List<List<vm.Vector3>> _innerRings = [];
   List<vm.Vector3> _playerSphere = [];
 
   @override
@@ -72,16 +76,22 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
 
   void _resetGame() {
     setState(() {
+      _tubeLength = 20 + _random.nextInt(21);
+      _outerRadius = 250 + _random.nextDouble() * 150;
+      _innerRadius = _outerRadius - 50;
+      _farPlane = -(_tubeLength * _ringSpacing);
+
       _distance = 0;
       _tubeRotationZ = 0;
       _rollVel = 0;
-      _pitch = 0.05 * pi;
+      _pitch = 8 * (pi / 180);
       _pitchVel = 0;
       _yaw = 0;
       _yawVel = 0;
       _isGameOver = false;
       _fallVel = 0;
-      _playerY = -_radius + 40;
+      _playerY = -_innerRadius + 40;
+      _playerZ = -(_tubeLength * _ringSpacing * 0.1);
       _generateTubeRings();
       _generatePlayerSphere();
     });
@@ -97,17 +107,27 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
   }
 
   void _generateTubeRings() {
-    _rings = [];
-    for (int i = 0; i < _ringsCount; i++) {
-      final List<vm.Vector3> ring = [];
+    _outerRings = [];
+    _innerRings = [];
+    for (int i = 0; i < _tubeLength; i++) {
+      final List<vm.Vector3> outerRing = [];
+      final List<vm.Vector3> innerRing = [];
       for (int j = 0; j < _ringSegments; j++) {
         final double angle = j * (2 * pi / _ringSegments);
-        final double x = cos(angle) * _radius;
-        final double y = sin(angle) * _radius;
         final double z = -(i * _ringSpacing);
-        ring.add(vm.Vector3(x, y, z));
+
+        // Outer ring
+        final double ox = cos(angle) * _outerRadius;
+        final double oy = sin(angle) * _outerRadius;
+        outerRing.add(vm.Vector3(ox, oy, z));
+
+        // Inner ring
+        final double ix = cos(angle) * _innerRadius;
+        final double iy = sin(angle) * _innerRadius;
+        innerRing.add(vm.Vector3(ix, iy, z));
       }
-      _rings.add(ring);
+      _outerRings.add(outerRing);
+      _innerRings.add(innerRing);
     }
   }
 
@@ -145,11 +165,13 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
       _pitch = (_pitch + _pitchVel).clamp(0, pi * 0.2);
       _yaw += _yawVel;
 
-      for (var ring in _rings) {
-        for (var point in ring) {
-          point.z += 25;
-          if (point.z > 100) {
+      for (var rings in [_outerRings, _innerRings]) {
+        for (var ring in rings) {
+          for (var point in ring) {
+            point.z += 25;
+            if (point.z > 100) {
             point.z = _farPlane;
+            }
           }
         }
       }
@@ -175,13 +197,16 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
           CustomPaint(
             size: Size.infinite,
             painter: TubePainter(
-              rings: _rings,
+              outerRings: _outerRings,
+              innerRings: _innerRings,
               tubeRotationZ: _tubeRotationZ,
               pitch: _pitch,
               yaw: _yaw,
               distance: _distance,
               playerSphere: _playerSphere,
               playerY: _playerY,
+              playerZ: _playerZ,
+              outerRadius: _outerRadius,
             ),
           ),
           _buildHud(),
@@ -279,35 +304,36 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
 }
 
 class TubePainter extends CustomPainter {
-  final List<List<vm.Vector3>> rings;
+  final List<List<vm.Vector3>> outerRings;
+  final List<List<vm.Vector3>> innerRings;
   final double tubeRotationZ;
   final double pitch;
   final double yaw;
   final double distance;
   final List<vm.Vector3> playerSphere;
   final double playerY;
+  final double playerZ;
+  final double outerRadius;
 
   TubePainter({
-    required this.rings,
+    required this.outerRings,
+    required this.innerRings,
     required this.tubeRotationZ,
     required this.pitch,
     required this.yaw,
     required this.distance,
     required this.playerSphere,
     required this.playerY,
+    required this.playerZ,
+    required this.outerRadius,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final tubePaint = Paint()
-      ..color = _TubeGameState._tubeColor
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
+    final tubePaint = Paint()..style = PaintingStyle.fill;
     final playerPaint = Paint()
       ..color = _TubeGameState._playerColor
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
+      ..style = PaintingStyle.fill;
 
     final double fov = 75 * (pi / 180);
     final double near = 1;
@@ -315,108 +341,155 @@ class TubePainter extends CustomPainter {
     final double aspectRatio = size.width / size.height;
 
     final projectionMatrix = vm.makePerspectiveMatrix(fov, aspectRatio, near, far);
-
     final viewMatrix = vm.Matrix4.identity()
-      ..translate(0.0, -_TubeGameState._radius + 150, -300.0)
+      ..translate(0.0, -this.outerRadius + 150, -300.0)
       ..rotateX(pitch)
       ..rotateY(yaw);
-
     final tubeRotationMatrix = vm.Matrix4.identity()..rotateZ(tubeRotationZ);
 
-    final List<List<Offset?>> projectedRings = [];
-    final List<List<double>> ringDepths = [];
+    final List<_ProjectedPolygon> polygons = [];
 
-    for (final ring in rings) {
-      final List<Offset?> projectedRing = [];
-      final List<double> depths = [];
-      for (final point in ring) {
-        vm.Vector4 p = vm.Vector4(point.x, point.y, point.z, 1.0);
-        p = tubeRotationMatrix * p;
-        p = viewMatrix * p;
+    // --- 3D Projection and Polygon Creation ---
+    Offset? project(vm.Vector3 p3d) {
+      vm.Vector4 p4d = vm.Vector4(p3d.x, p3d.y, p3d.z, 1.0);
+      p4d = tubeRotationMatrix * p4d;
+      p4d = viewMatrix * p4d;
+      final zDepth = p4d.z;
+      p4d = projectionMatrix * p4d;
 
-        depths.add(p.z.abs());
-
-        p = projectionMatrix * p;
-
-        if (p.w > 0) {
-          p.x /= p.w;
-          p.y /= p.w;
-          projectedRing.add(Offset(
-            (p.x + 1) * 0.5 * size.width,
-            (1 - (p.y + 1) * 0.5) * size.height,
-          ));
-        } else {
-          projectedRing.add(null);
-        }
+      if (p4d.w > 0) {
+        p4d.x /= p4d.w;
+        p4d.y /= p4d.w;
+        return Offset(
+          (p4d.x + 1) * 0.5 * size.width,
+          (1 - (p4d.y + 1) * 0.5) * size.height,
+        );
       }
-      projectedRings.add(projectedRing);
-      ringDepths.add(depths);
+      return null;
     }
 
-    for (int i = 0; i < rings.length - 1; i++) {
-      final double adjustedDistance = distance + rings[i].first.z.abs();
-      final bool isHoleZone = (adjustedDistance % 3000) > 2000;
-
+    // --- Tube Polygons ---
+    for (int i = 0; i < outerRings.length - 1; i++) {
       for (int j = 0; j < _TubeGameState._ringSegments; j++) {
-        final double angle = j * (2 * pi / _TubeGameState._ringSegments);
-        final double normalizedAngle = ((angle - tubeRotationZ) % (2 * pi) + (2 * pi)) % (2 * pi);
+        final int nextJ = (j + 1) % _TubeGameState._ringSegments;
 
-        if (isHoleZone && normalizedAngle > 1.5 && normalizedAngle < 4.5) {
-          continue; // Skip drawing this segment
+        // Points for the quad
+        final p1 = outerRings[i][j];
+        final p2 = outerRings[i+1][j];
+        final p3 = outerRings[i+1][nextJ];
+        final p4 = outerRings[i][nextJ];
+
+        final ip1 = innerRings[i][j];
+        final ip2 = innerRings[i+1][j];
+        final ip3 = innerRings[i+1][nextJ];
+        final ip4 = innerRings[i][nextJ];
+
+        // --- Backface Culling (Simple version) ---
+        vm.Vector3 v1 = p2 - p1;
+        vm.Vector3 v2 = p4 - p1;
+        vm.Vector3 normal = v1.cross(v2).normalized();
+        vm.Vector3 toCamera = (vm.Vector3(0,0,0) - (p1+p2+p3+p4)/4).normalized();
+        if (normal.dot(toCamera) < 0) continue;
+
+        // Project points
+        final projP1 = project(p1);
+        final projP2 = project(p2);
+        final projP3 = project(p3);
+        final projP4 = project(p4);
+
+        final projIp1 = project(ip1);
+        final projIp2 = project(ip2);
+        final projIp3 = project(ip3);
+        final projIp4 = project(ip4);
+
+        if (projP1 != null && projP2 != null && projP3 != null && projP4 != null) {
+          final zDepth = (p1.z + p2.z + p3.z + p4.z) / 4;
+          polygons.add(_ProjectedPolygon(
+            points: [projP1, projP2, projP3, projP4],
+            zDepth: zDepth,
+            color: _TubeGameState._tubeColor,
+          ));
         }
 
-        final double fogFactor = (ringDepths[i][j] - 2000) / (15000 - 2000);
-        final double opacity = 1.0 - fogFactor.clamp(0.0, 1.0);
-        if (opacity <= 0) continue;
+        if (projIp1 != null && projIp2 != null && projIp3 != null && projIp4 != null) {
+            // Backface culling for inner walls
+            v1 = ip2 - ip1;
+            v2 = ip4 - ip1;
+            normal = v2.cross(v1).normalized();
+            toCamera = (vm.Vector3(0,0,0) - (ip1+ip2+ip3+ip4)/4).normalized();
+            if (normal.dot(toCamera) < 0) continue;
 
-        final paint = tubePaint..color = _TubeGameState._tubeColor.withOpacity(opacity);
-
-        final p1 = projectedRings[i][j];
-        final p2 = projectedRings[i + 1][j];
-        if (p1 != null && p2 != null) canvas.drawLine(p1, p2, paint);
-
-        final p3 = projectedRings[i][j];
-        final p4 = projectedRings[i][(j + 1) % _TubeGameState._ringSegments];
-        if (p3 != null && p4 != null) canvas.drawLine(p3, p4, paint);
+            final zDepth = (ip1.z + ip2.z + ip3.z + ip4.z) / 4;
+            polygons.add(_ProjectedPolygon(
+                points: [projIp1, projIp2, projIp3, projIp4],
+                zDepth: zDepth,
+                color: _TubeGameState._tubeColor.withOpacity(0.7),
+            ));
+        }
       }
     }
 
-    final List<Offset?> projectedSphere = [];
-    for (final point in playerSphere) {
-      vm.Vector4 p = vm.Vector4(point.x, point.y + playerY, point.z, 1.0);
-      p = viewMatrix * p;
-      p = projectionMatrix * p;
+    // --- Front face of the tube ---
+    for (int j = 0; j < _TubeGameState._ringSegments; j++) {
+        final int nextJ = (j + 1) % _TubeGameState._ringSegments;
+        final p1 = outerRings[0][j];
+        final p2 = innerRings[0][j];
+        final p3 = innerRings[0][nextJ];
+        final p4 = outerRings[0][nextJ];
 
-      if (p.w > 0) {
-        p.x /= p.w;
-        p.y /= p.w;
-        projectedSphere.add(Offset(
-          (p.x + 1) * 0.5 * size.width,
-          (1 - (p.y + 1) * 0.5) * size.height,
+        final projP1 = project(p1);
+        final projP2 = project(p2);
+        final projP3 = project(p3);
+        final projP4 = project(p4);
+
+        if (projP1 != null && projP2 != null && projP3 != null && projP4 != null) {
+            polygons.add(_ProjectedPolygon(
+                points: [projP1, projP2, projP3, projP4],
+                zDepth: p1.z,
+                color: _TubeGameState._tubeColor.withOpacity(0.85),
+            ));
+        }
+    }
+
+    // --- Player Sphere Polygons (Simplified) ---
+    // (A full sphere implementation is complex, so we'll draw a filled circle)
+    final playerCenter3D = vm.Vector3(0, playerY, playerZ);
+    final projPlayerCenter = project(playerCenter3D);
+    if(projPlayerCenter != null){
+         polygons.add(_ProjectedPolygon(
+            points: [projPlayerCenter], // Special case for circle
+            zDepth: playerCenter3D.z,
+            color: _TubeGameState._playerColor,
         ));
-      } else {
-        projectedSphere.add(null);
-      }
     }
 
-    const int latitudeBands = 10;
-    const int longitudeBands = 10;
-    for (int lat = 0; lat < latitudeBands; lat++) {
-        for (int long = 0; long < longitudeBands; long++) {
-            final int first = (lat * (longitudeBands + 1)) + long;
-            final int second = first + longitudeBands + 1;
 
-            final p1 = projectedSphere[first];
-            final p2 = projectedSphere[first + 1];
-            if (p1 != null && p2 != null) canvas.drawLine(p1, p2, playerPaint);
+    // --- Painter's Algorithm (Sort and Draw) ---
+    polygons.sort((a, b) => b.zDepth.compareTo(a.zDepth));
 
-            final p3 = projectedSphere[first];
-            final p4 = projectedSphere[second];
-            if (p3 != null && p4 != null) canvas.drawLine(p3, p4, playerPaint);
+    for (final poly in polygons) {
+        if(poly.points.length == 1){ // Draw sphere as circle
+            canvas.drawCircle(poly.points.first, 40.0, playerPaint);
+        } else {
+            final path = Path()..addPolygon(poly.points, true);
+            tubePaint.color = poly.color;
+            canvas.drawPath(path, tubePaint);
         }
     }
   }
 
   @override
   bool shouldRepaint(covariant TubePainter oldDelegate) => true;
+}
+
+class _ProjectedPolygon {
+  final List<Offset> points;
+  final double zDepth;
+  final Color color;
+
+  _ProjectedPolygon({
+    required this.points,
+    required this.zDepth,
+    required this.color,
+  });
 }
