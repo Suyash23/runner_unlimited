@@ -1,5 +1,5 @@
-name: endless_tube
-description: A Flutter port of a classic Three.js endless tube game.
+name: endless_tube_hf
+description: A high-fidelity Flutter port of a classic Three.js endless tube game.
 publish_to: 'none'
 
 version: 1.0.0+1
