@@ -163,7 +163,7 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
     }
     final picture = recorder.endRecording();
     final image = await picture.toImage(size.width.toInt(), size.height.toInt());
-    final bytes = await image.toByteData(format: ui.ImageByteFormat.rgba8888);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
     setState(() {
       _textureBytes = bytes;
       _textureWidth = image.width;
@@ -325,7 +325,7 @@ class TubePainter extends CustomPainter {
       final p1 = transformedVertices[0].$1;
       final p2 = transformedVertices[1].$1;
       final p3 = transformedVertices[2].$1;
-      final normal = (p2 - p1).cross(p3 - p1);
+      final normal = (p2.xyz - p1.xyz).cross(p3.xyz - p1.xyz);
       if (normal.dot(p1.xyz) >= 0) continue;
 
       final projected = <(vm.Vector4, Vertex)>[];
