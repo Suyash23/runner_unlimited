@@ -258,7 +258,7 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
           border: Border.all(color: _tubeColor),
           borderRadius: BorderRadius.circular(4),
         ),
-        child: Text(label, style: const TextStyle(color: _tubeColor, fontSize: 18)),
+        child: Text(label, style: TextStyle(color: _tubeColor, fontSize: 18)),
       ),
     );
   }
@@ -268,7 +268,7 @@ class _TubeGameState extends State<TubeGame> with SingleTickerProviderStateMixin
       top: 40,
       right: 20,
       child: DefaultTextStyle(
-        style: const TextStyle(color: _tubeColor, fontSize: 16),
+        style: TextStyle(color: _tubeColor, fontSize: 16),
         child: Text(
           'DISTANCE: ${(_distance / 10).floor()}m\nSTATUS: ${_hasGround ? "STABLE" : "VOID DETECTED"}',
           textAlign: TextAlign.right,
